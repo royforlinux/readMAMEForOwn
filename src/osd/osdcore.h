@@ -251,6 +251,10 @@ int osd_uchar_from_osdchar(UINT32 /* unicode_char */ *uchar, const char *osdchar
 
 /* types of directory entries that can be returned */
 enum osd_dir_entry_type
+/*
+ * 这里定义的枚举类型，就是这些用ENTTYPE_xxx，找了一个小时，果然是基本功不扎实啊
+ * 按照名称理解，应该是osd层目录进入类型，必然是其中之一
+ */
 {
 	ENTTYPE_NONE,
 	ENTTYPE_FILE,
