@@ -52,11 +52,14 @@ file_error sdl_open_socket(const char *path, UINT32 openflags, osd_file **file, 
 	int flag = 1;
 	int port;
 
+    /*
+     * 可能socket格式的hostname真的有255位外加一个个冒号
+     */
 	sscanf( path+strlen(sdlfile_socket_identifier), "%255[^:]:%d", hostname, &port );
 
 //  printf("Connecting to server '%s' on port '%d'\n", hostname, port);
 
-	if (((*file)->socket = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+	if (((*file)->socket = socket(AF_INET, SOCK_STREAM, 1)) == -1)
 	{
 		return FILERR_ACCESS_DENIED;
 	}

@@ -76,6 +76,10 @@ static UINT32 create_path_recursive(char *path);
 //============================================================
 
 file_error error_to_file_error(UINT32 error)
+    /*
+     * 标准错误和自定义类型错误的转换
+     * 返回的枚举类型元素在osdcore.h文件中有定义
+     */
 {
 	switch (error)
 	{
@@ -109,6 +113,12 @@ file_error error_to_file_error(UINT32 error)
 //============================================================
 
 file_error osd_open(const char *path, UINT32 openflags, osd_file **file, UINT64 *filesize)
+    /*
+     * 所做的一切只是为了打开文件，所以要依照传入的路径检测是否存在，是否是设备文件
+     * 如果是socket就用打开socket的方式，如果是设备文件，就用打开设备文件的方式，如果失败
+     * 就构造出完整的路径之后再次打开，如果实在打不开，只能执行清理程序，因为可能打开程序
+     * 时候的权限不够
+     */
 {
 	UINT32 access;
 	const char *src;
@@ -125,6 +135,11 @@ file_error osd_open(const char *path, UINT32 openflags, osd_file **file, UINT64 
 	tmpstr = NULL;
 
 	// allocate a file object, plus space for the converted filename
+    /*
+     * 对传入的file变量解一级指针，仍然是个指针变量，并且用这个指针指向了分配的空间头
+     * 分配的变量是osd_file结构体的大小加上path字符串的大小，但是最后强转成osd_file的
+     * 指针,分配的空间分配的osd_file的空间，和其路径的字符串的空间
+     */
 	*file = (osd_file *) osd_malloc_array(sizeof(**file) + sizeof(char) * strlen(path));
 	if (*file == NULL)
 	{
@@ -134,12 +149,21 @@ file_error osd_open(const char *path, UINT32 openflags, osd_file **file, UINT64 
 
 	if (sdl_check_socket_path(path))
 	{
+        /*
+         * 使用到了未定义名字的枚举类型的枚举元素
+         * 使用打开socket的函数打开后转入清理程序
+         */
 		(*file)->type = SDLFILE_SOCKET;
 		filerr = sdl_open_socket(path, openflags, file, filesize);
 		goto error;
 	}
 
 	if (strlen(sdlfile_ptty_identifier) > 0 && strncmp(path, sdlfile_ptty_identifier, strlen(sdlfile_ptty_identifier)) == 0)
+        /*
+         * 检测是否是设备文件，sdlfile_ptty_identifier在sdlptty_unix.c文件中定义为
+         * /dev/pts,所以上面是在检测是否存在这一个标志用来从设备中读取文件
+         * 设置文件类型后，之久用sdl_open_ptty函数读取就好
+         */
 	{
 		(*file)->type = SDLFILE_PTTY;
 		filerr = sdl_open_ptty(path, openflags, file, filesize);
@@ -150,11 +174,18 @@ file_error osd_open(const char *path, UINT32 openflags, osd_file **file, UINT64 
 
 	// convert the path into something compatible
 	dst = (*file)->filename;
+    /*
+     * 这儿for循环用于转换反斜杠和斜杠
+     */
 	for (src = path; *src != 0; src++)
 		*dst++ = (*src == INVPATHSEPCH) ? PATHSEPCH : *src;
+    /*
+     * 以空字符结尾
+     */
 	*dst++ = 0;
 
 	// select the file open modes
+    // 选择文件打开的模式
 	if (openflags & OPEN_FLAG_WRITE)
 	{
 		access = (openflags & OPEN_FLAG_READ) ? O_RDWR : O_WRONLY;
@@ -170,6 +201,10 @@ file_error osd_open(const char *path, UINT32 openflags, osd_file **file, UINT64 
 		goto error;
 	}
 
+    /*
+     * 虽然给(*file)分配的内存空间大于osd_file所需要的空间，但是最后任然强转成了
+     * osd_file的一级指针，所以仍然可以这样使用osd_file结构体中的信息
+     */
 	tmpstr = (char *) osd_malloc_array(strlen((*file)->filename)+1);
 	strcpy(tmpstr, (*file)->filename);
 
@@ -214,11 +249,20 @@ file_error osd_open(const char *path, UINT32 openflags, osd_file **file, UINT64 
 
 	// attempt to open the file
 	#if defined(SDLMAME_DARWIN) || defined(SDLMAME_WIN32) || defined(SDLMAME_NO64BITIO) || defined(SDLMAME_BSD) || defined(SDLMAME_OS2) || defined(SDLMAME_HAIKU)
+    /*
+     * Linux提供的函数
+     * 返回的是文件描述信息，如果失败返回-1
+     */
 	(*file)->handle = open(tmpstr, access, 0666);
 	#else
 	(*file)->handle = open64(tmpstr, access, 0666);
 	#endif
 	if ((*file)->handle == -1)
+        /*
+         * 如果打开失败
+         * 如果需要构造绝对路径，则利用create_path_recursive函数构建它
+         * 该函数是循环构建的，其中的逻辑很巧妙
+         */
 	{
 		// create the path if necessary
 		if ((openflags & OPEN_FLAG_CREATE) && (openflags & OPEN_FLAG_CREATE_PATHS))
@@ -237,6 +281,9 @@ file_error osd_open(const char *path, UINT32 openflags, osd_file **file, UINT64 
 				if (error == NO_ERROR)
 				{
 					#if defined(SDLMAME_DARWIN) || defined(SDLMAME_WIN32) || defined(SDLMAME_NO64BITIO) || defined(SDLMAME_BSD) || defined(SDLMAME_OS2) || defined(SDLMAME_HAIKU)
+                    /*
+                     * 再次打开，这次每个路径都已经创建，不会出错，权限666
+                     */
 					(*file)->handle = open(tmpstr, access, 0666);
 					#else
 					(*file)->handle = open64(tmpstr, access, 0666);
@@ -246,6 +293,7 @@ file_error osd_open(const char *path, UINT32 openflags, osd_file **file, UINT64 
 		}
 
 		// if we still failed, clean up and osd_free
+        // 所有努力都换来失败的时候，说明你权限不够，关闭重新启动吧
 		if ((*file)->handle == -1)
 		{
 			osd_free(*file);
@@ -257,6 +305,9 @@ file_error osd_open(const char *path, UINT32 openflags, osd_file **file, UINT64 
 
 	// get the file size
 	#if defined(SDLMAME_DARWIN) || defined(SDLMAME_WIN32) || defined(SDLMAME_NO64BITIO) || defined(SDLMAME_BSD) || defined(SDLMAME_OS2) || defined(SDLMAME_HAIKU)
+    /*
+     * (*file)->handle是个int值,fstat函数的第一参数是文件句柄，是一个int值
+     */
 	fstat((*file)->handle, &st);
 	#else
 	fstat64((*file)->handle, &st);
@@ -289,6 +340,7 @@ file_error osd_read(osd_file *file, void *buffer, UINT64 offset, UINT32 count, U
 	{
 		case SDLFILE_FILE:
 #if defined(SDLMAME_DARWIN) || defined(SDLMAME_BSD) || defined(SDLMAME_EMSCRIPTEN)
+            //pread是个Linux系统函数，从一个一直的句柄和偏移开始读字节到已知字节数
 			result = pread(file->handle, buffer, count, offset);
 			if (result < 0)
 #elif defined(SDLMAME_WIN32) || defined(SDLMAME_NO64BITIO) || defined(SDLMAME_OS2)
@@ -439,6 +491,7 @@ static UINT32 create_path_recursive(char *path)
 		*sep = 0;
 		filerr = create_path_recursive(path);
 		*sep = PATHSEPCH;
+        //检测是否需要创建该路径
 		if (filerr != NO_ERROR)
 			return filerr;
 	}
@@ -468,6 +521,7 @@ int osd_get_physical_drive_geometry(const char *filename, UINT32 *cylinders, UIN
 
 //============================================================
 //  osd_is_path_separator
+//  检测是否是分隔符
 //============================================================
 
 static int osd_is_path_separator(char c)
@@ -477,6 +531,7 @@ static int osd_is_path_separator(char c)
 
 //============================================================
 //  osd_is_absolute_path
+//  检测是否是绝对路径
 //============================================================
 
 int osd_is_absolute_path(const char *path)
